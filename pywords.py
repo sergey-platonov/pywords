@@ -311,7 +311,6 @@ class QGuiCore(QtCore.QObject):
 
         num_of_fs = 0
         for window in root_win.query_tree()._data['children']:
-            window_name = window.get_wm_name()
             width = window.get_geometry()._data["width"]
             height = window.get_geometry()._data["height"]
             if width == screen.width_in_pixels and height == screen.height_in_pixels:
