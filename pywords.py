@@ -5,6 +5,7 @@ import sys
 import httplib
 import pickle
 import random
+import string
 import Xlib.display
 
 from PyQt4 import QtGui
@@ -56,9 +57,13 @@ class Translator:
         return len(self.__words)
 
     def __tr(self, word):
+        lang = 'ru'
+        if not self.__is_ascii(word):
+            lang = 'en'
+
         connection = httplib.HTTPConnection('translate.google.com')
         connection.request('GET', 'http://translate.google.com/translate_a/t?client=t&text='
-            + word + '&sl=auto&tl=ru', '', {'User-Agent': 'Mozilla/5.0'})
+            + word + '&sl=auto&tl=' + lang, '', {'User-Agent': 'Mozilla/5.0'})
         response = connection.getresponse()
         data = response.read()
         i0 = data.index('"') + 1
@@ -90,6 +95,8 @@ class Translator:
             if rnd < 0:
                 return self.__getkey(i)
 
+    def __is_ascii(self, word):
+        return all(ord(c) < 128 for c in word)
 
 class QWordsServer(QtNetwork.QTcpServer):
     'Receivec connections from a local clients and reads word to translate'
@@ -106,7 +113,8 @@ class QWordsServer(QtNetwork.QTcpServer):
     def __session(self):
         socket = self.nextPendingConnection()
         socket.waitForReadyRead(-1)
-        word = QtCore.QString.fromUtf8(socket.readAll())
+        data = socket.readAll()
+        word = QtCore.QString.fromUtf8(data)
         socket.close()
         self.dataReceived.emit(word)
 
@@ -288,7 +296,7 @@ class QGuiCore(QtCore.QObject):
         self.__icon.show()
 
     def translate(self, word):
-        tr = self.__translator.getword(str(word))
+        tr = self.__translator.getword(str(word.toUtf8()))
         self.__icon.showMessage(word, QtCore.QString.fromUtf8(tr),
                 QtGui.QSystemTrayIcon.Information, 5000)
 
