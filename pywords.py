@@ -94,7 +94,7 @@ class QWordsClient(QtNetwork.QTcpSocket):
 
 
 # GUI related code
-class QWordsWidget(QtGui.QWidget):
+class QWordsWidget(QtGui.QDialog):
     'Widget to check word knowledge'
 
     def __init__(self):
@@ -110,6 +110,14 @@ class QWordsWidget(QtGui.QWidget):
         layout.addWidget(self.label, 0, 0)
         layout.addWidget(self.edit, 1, 0)
 
+    def showWord(self, word):
+        self.label.setText(word)
+        self.show()
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
 
 class QStatusIcon(QtGui.QSystemTrayIcon):
     'System tray for menu and status checking'
@@ -117,11 +125,11 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
     quitSignal = pyqtSignal()
     showSignal = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, parent):
         path = os.path.expanduser('~') + '/.pywords/pywords.png'
         icon = QtGui.QIcon(path)
 
-        super(QStatusIcon, self).__init__(icon)
+        super(QStatusIcon, self).__init__(icon, parent)
         menu = QtGui.QMenu()
         self.showWidgetAction = menu.addAction('Random word')
         self.showWidgetAction.triggered.connect(self.showSignal)
@@ -137,6 +145,7 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
 class QGuiCore(QtCore.QObject):
 
     quitSignal = pyqtSignal()
+    showWord = pyqtSignal('QString')
     __translator = Translator()
 
     def __init__(self):
@@ -144,10 +153,9 @@ class QGuiCore(QtCore.QObject):
         self.__createIcon()
 
     def __createIcon(self):
-        self.__icon = QStatusIcon()
+        self.__icon = QStatusIcon(self)
         self.__icon.showSignal.connect(self.askRandomWord)
         self.__icon.quitSignal.connect(self.quitSignal)
-        self.destroyed.connect(self.__icon.hide)
         self.__icon.show()
 
     def translate(self, word):
@@ -159,10 +167,7 @@ class QGuiCore(QtCore.QObject):
         random.seed()
         rnum = random.randrange(self.__translator.size())
         word = self.__translator.getkey(rnum)
-
-        widget = QWordsWidget()
-        widget.label.text = QtCore.QString(word)
-        widget.show()
+        self.showWord.emit(QtCore.QString.fromUtf8(word))
 
 
 if __name__ == '__main__':
@@ -170,8 +175,13 @@ if __name__ == '__main__':
         app = QtGui.QApplication(sys.argv)
         gui = QGuiCore()
         gui.quitSignal.connect(app.quit)
+
+        widget = QWordsWidget()
+        gui.showWord.connect(widget.showWord)
+
         server = QWordsServer()
         server.dataReceived.connect(gui.translate)
+
         sys.exit(app.exec_())
     else:
         sel = os.popen('xsel').read()
