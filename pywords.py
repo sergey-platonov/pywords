@@ -5,6 +5,7 @@ import sys
 import httplib
 import pickle
 import random
+import Xlib.display
 
 from PyQt4 import QtGui
 from PyQt4 import QtCore
@@ -170,14 +171,15 @@ class QWordsWidget(QtGui.QDialog):
         self.layout.addWidget(self.lbutton, 2, 0)
 
     def showWord(self, word, tr):
-        self.label.setText(word)
-        self.translation.setText(tr)
-        self.edit.setText('')
-        self.edit.setStyleSheet('font: 11pt "Ubuntu";')
-        self.edit.setFocus()
-        self.__answerGiven = False
-        self.show()
-        self.showed.emit(True)
+        if not self.isVisible():
+            self.label.setText(word)
+            self.translation.setText(tr)
+            self.edit.setText('')
+            self.edit.setStyleSheet('font: 11pt "Ubuntu";')
+            self.edit.setFocus()
+            self.__answerGiven = False
+            self.show()
+            self.showed.emit(True)
 
     def closeEvent(self, event):
         'just hide dialog'
@@ -275,6 +277,9 @@ class QGuiCore(QtCore.QObject):
         super(QGuiCore, self).__init__()
         self.__createIcon()
         random.seed()
+        self.__timer = QtCore.QTimer()
+        self.__timer.timeout.connect(self.askRandomWord)
+        self.__timer.start(30 * 60 * 1000)  # ms
 
     def __createIcon(self):
         self.__icon = QStatusIcon(self)
@@ -288,7 +293,7 @@ class QGuiCore(QtCore.QObject):
                 QtGui.QSystemTrayIcon.Information, 5000)
 
     def askRandomWord(self):
-        if self.__translator.size() == 0:
+        if self.__translator.size() == 0 or self.__isFullscreen():
             return
 
         word = self.__translator.randomword()
@@ -299,6 +304,20 @@ class QGuiCore(QtCore.QObject):
     def answer(self, word, correct):
         self.__translator.answer(str(word.toUtf8()), correct)
 
+    def __isFullscreen(self):
+        'detect if system working in fullscreen, so wee do not want to interupt it'
+        screen = Xlib.display.Display().screen()
+        root_win = screen.root
+
+        num_of_fs = 0
+        for window in root_win.query_tree()._data['children']:
+            window_name = window.get_wm_name()
+            width = window.get_geometry()._data["width"]
+            height = window.get_geometry()._data["height"]
+            if width == screen.width_in_pixels and height == screen.height_in_pixels:
+                num_of_fs += 1
+
+        return num_of_fs > 1
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--server':
