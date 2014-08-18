@@ -36,18 +36,18 @@ class Translator:
 
         translation = ''
         if word in self.__words:
-            translation = self.__words[word]
+            translation = self.__words[word]['tr']
         else:
             translation = self.__tr(word)
             if translation != '':
-                self.__words[word] = translation
-                self.__words[translation] = word
+                self.__words[word] = {'tr': translation, 'weight': 1}
+                self.__words[translation] = {'tr': word, 'weight': 1}
                 outfile = open(self.__filename, 'wb')
                 pickle.dump(self.__words, outfile)
 
         return translation
 
-    def getkey(self, num):
+    def __getkey(self, num):
         keys = list(self.__words.keys())
         return keys[num]
 
@@ -66,6 +66,28 @@ class Translator:
 
     def answer(self, word, correct):
         'if answer is correct weight of the word decreasing, otherwise increasing'
+
+        weight = 0
+        if correct:
+            weight = self.__words[word]['weight'] - 0.2
+        else:
+            weight = self.__words[word]['weight'] + 0.2
+
+        if weight <= 0:
+            weight = 0.01
+
+        tr = self.__words[word]['tr']
+        self.__words[word] = {'tr': tr, 'weight': weight}
+
+    # http://eli.thegreenplace.net/2010/01/22/weighted-random-generation-in-python/
+    def randomword(self):
+        weights = map(lambda t: self.__words[t]['weight'], self.__words)
+        #print weights
+        rnd = random.random() * sum(weights)
+        for i, w in enumerate(weights):
+            rnd -= w
+            if rnd < 0:
+                return self.__getkey(i)
 
 
 class QWordsServer(QtNetwork.QTcpServer):
@@ -105,6 +127,7 @@ class QWordsWidget(QtGui.QDialog):
     'Widget to check word knowledge'
 
     answer = pyqtSignal('QString', bool)
+    showed = pyqtSignal(bool)
 
     def __init__(self):
         super(QWordsWidget, self).__init__()
@@ -154,11 +177,14 @@ class QWordsWidget(QtGui.QDialog):
         self.edit.setFocus()
         self.__answerGiven = False
         self.show()
+        self.showed.emit(True)
 
     def closeEvent(self, event):
         'just hide dialog'
         event.ignore()
+        self.__hideTranslation()
         self.hide()
+        self.showed.emit(False)
 
     def onEnterPressed(self):
         'process inputed text'
@@ -235,6 +261,9 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
 
         self.setContextMenu(menu)
 
+    def setShowActionEnabled(self, vis):
+        self.showWidgetAction.setEnabled(vis)
+
 
 class QGuiCore(QtCore.QObject):
 
@@ -245,6 +274,7 @@ class QGuiCore(QtCore.QObject):
     def __init__(self):
         super(QGuiCore, self).__init__()
         self.__createIcon()
+        random.seed()
 
     def __createIcon(self):
         self.__icon = QStatusIcon(self)
@@ -261,14 +291,13 @@ class QGuiCore(QtCore.QObject):
         if self.__translator.size() == 0:
             return
 
-        random.seed()
-        rnum = random.randrange(self.__translator.size())
-        word = ''
-        while (word == ''):
-            word = self.__translator.getkey(rnum)
+        word = self.__translator.randomword()
 
         tr = self.__translator.getword(word)
         self.showWord.emit(QString.fromUtf8(word), QString.fromUtf8(tr))
+
+    def answer(self, word, correct):
+        self.__translator.answer(str(word.toUtf8()), correct)
 
 
 if __name__ == '__main__':
@@ -279,6 +308,8 @@ if __name__ == '__main__':
 
         widget = QWordsWidget()
         gui.showWord.connect(widget.showWord)
+        widget.answer.connect(gui.answer)
+        #widget.showed.connect()
 
         server = QWordsServer()
         server.dataReceived.connect(gui.translate)
