@@ -103,6 +103,7 @@ class QWordsWidget(QtGui.QDialog):
 
     def __initGui(self):
         self.label = QtGui.QLabel()
+        self.label.setStyleSheet('font: 12pt "Ubuntu";')
         self.edit = QtGui.QLineEdit()
         # create layout
         layout = QtGui.QGridLayout(self)
@@ -115,8 +116,12 @@ class QWordsWidget(QtGui.QDialog):
         self.show()
 
     def closeEvent(self, event):
+        'just hide dialog'
         event.ignore()
         self.hide()
+
+    def onEnterPressed(self):
+        'process inputed text'
 
 
 class QStatusIcon(QtGui.QSystemTrayIcon):
