@@ -98,15 +98,18 @@ class QWordsWidget(QtGui.QDialog):
     'Widget to check word knowledge'
 
     def __init__(self):
-        super(QWordsWidget, self).__init__()
+        super(QWordsWidget, self).__init__(None, Qt.WindowTitleHint | Qt.WindowSystemMenuHint)
         self.__initGui()
+        self.setWindowTitle('Translate')
 
     def __initGui(self):
         self.label = QtGui.QLabel()
-        self.label.setStyleSheet('font: 12pt "Ubuntu";')
+        self.label.setStyleSheet('font: 11pt "Ubuntu";')
         self.edit = QtGui.QLineEdit()
+        self.edit.setStyleSheet('font: 11pt "Ubuntu";')
         # create layout
         layout = QtGui.QGridLayout(self)
+        layout.setSpacing(9)
         # add widgets to layout
         layout.addWidget(self.label, 0, 0)
         layout.addWidget(self.edit, 1, 0)
