@@ -9,7 +9,7 @@ import random
 from PyQt4 import QtGui
 from PyQt4 import QtCore
 from PyQt4 import QtNetwork
-from PyQt4.QtCore import pyqtSignal
+from PyQt4.QtCore import Qt, QString, pyqtSignal
 
 
 # Network related code
@@ -31,15 +31,19 @@ class Translator:
             pass
 
     def getword(self, word):
+        if word == '':
+            return ''
+
         translation = ''
-        if (word in self.__words):
+        if word in self.__words:
             translation = self.__words[word]
         else:
             translation = self.__tr(word)
-            self.__words[word] = translation
-            self.__words[translation] = word
-            outfile = open(self.__filename, 'wb')
-            pickle.dump(self.__words, outfile)
+            if translation != '':
+                self.__words[word] = translation
+                self.__words[translation] = word
+                outfile = open(self.__filename, 'wb')
+                pickle.dump(self.__words, outfile)
 
         return translation
 
@@ -59,6 +63,9 @@ class Translator:
         i0 = data.index('"') + 1
         i1 = data.index('"', i0)
         return data[i0: i1]
+
+    def answer(self, word, correct):
+        'if answer is correct weight of the word decreasing, otherwise increasing'
 
 
 class QWordsServer(QtNetwork.QTcpServer):
@@ -97,25 +104,55 @@ class QWordsClient(QtNetwork.QTcpSocket):
 class QWordsWidget(QtGui.QDialog):
     'Widget to check word knowledge'
 
+    answer = pyqtSignal('QString', bool)
+
     def __init__(self):
-        super(QWordsWidget, self).__init__(None, Qt.WindowTitleHint | Qt.WindowSystemMenuHint)
+        super(QWordsWidget, self).__init__()
         self.__initGui()
-        self.setWindowTitle('Translate')
+        self.__translationVisible = False
+        self.__answerGiven = False
 
     def __initGui(self):
-        self.label = QtGui.QLabel()
-        self.label.setStyleSheet('font: 11pt "Ubuntu";')
-        self.edit = QtGui.QLineEdit()
-        self.edit.setStyleSheet('font: 11pt "Ubuntu";')
-        # create layout
-        layout = QtGui.QGridLayout(self)
-        layout.setSpacing(9)
-        # add widgets to layout
-        layout.addWidget(self.label, 0, 0)
-        layout.addWidget(self.edit, 1, 0)
+        self.setWindowTitle('Translate')
+        self.setMaximumSize(240, 180)
+        self.setMinimumSize(240, 80)
 
-    def showWord(self, word):
+        self.label = QtGui.QLabel(self)
+        self.label.setStyleSheet('font: 11pt "Ubuntu";')
+        self.label.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+
+        self.lbutton = QtGui.QPushButton(self)
+        self.label.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        self.lbutton.setFlat(True)
+        self.lbutton.setText('>')
+        self.lbutton.setMaximumWidth(30)
+        self.lbutton.pressed.connect(self.onButtonPressed)
+
+        self.translation = QtGui.QLabel(self)
+        self.translation.setStyleSheet('font: 11pt "Ubuntu";')
+        self.translation.setSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Minimum)
+        self.translation.setVisible(False)
+
+        self.edit = QtGui.QLineEdit(self)
+        self.edit.setStyleSheet('font: 11pt "Ubuntu";')
+        #self.edit.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+        self.edit.installEventFilter(self)
+
+        # create layout
+        self.layout = QtGui.QGridLayout(self)
+        self.layout.setSpacing(9)
+        # add widgets to layout
+        self.layout.addWidget(self.label, 0, 0)
+        self.layout.addWidget(self.edit, 1, 0)
+        self.layout.addWidget(self.lbutton, 2, 0)
+
+    def showWord(self, word, tr):
         self.label.setText(word)
+        self.translation.setText(tr)
+        self.edit.setText('')
+        self.edit.setStyleSheet('font: 11pt "Ubuntu";')
+        self.edit.setFocus()
+        self.__answerGiven = False
         self.show()
 
     def closeEvent(self, event):
@@ -125,6 +162,55 @@ class QWordsWidget(QtGui.QDialog):
 
     def onEnterPressed(self):
         'process inputed text'
+        self.__showTranslation()
+
+    def onButtonPressed(self):
+        'show translation if button was pressed'
+
+        if self.__translationVisible:
+            self.__hideTranslation()
+        else:
+            self.__showTranslation()
+
+        self.edit.setFocus()
+
+    def eventFilter(self, receiver, event):
+        'event filter to get enter press event'
+        if (event.type() == QtCore.QEvent.KeyPress and (event.key() == Qt.Key_Return
+                    or event.key() == Qt.Key_Enter)):
+            self.onEnterPressed()
+            return True
+        else:
+            return super(QWordsWidget, self).eventFilter(receiver, event)
+
+    def __showTranslation(self):
+        if not self.__translationVisible:
+            self.setFixedHeight(self.height() + 30)
+            self.layout.addWidget(self.translation, 3, 0)
+            self.translation.setVisible(True)
+            self.lbutton.setText('v')
+            self.__translationVisible = True
+            correct = self.edit.text() == self.translation.text()
+            self.__giveAnswer(correct)
+
+    def __hideTranslation(self):
+        if self.__translationVisible:
+            self.translation.setVisible(False)
+            self.layout.removeWidget(self.translation)
+            self.setFixedHeight(self.height() - 30)
+            self.lbutton.setText('>')
+            self.__translationVisible = False
+
+    def __giveAnswer(self, correct):
+        if not self.__answerGiven:
+            self.__answerGiven = True
+            self.answer.emit(self.label.text(), correct)
+            css = self.edit.styleSheet()
+            if correct:
+                css = css + 'background-color: rgb(148, 220, 135);'  # green
+            else:
+                css = css + 'background-color: rgb(237, 121, 121);'  # red
+            self.edit.setStyleSheet(css)
 
 
 class QStatusIcon(QtGui.QSystemTrayIcon):
@@ -153,7 +239,7 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
 class QGuiCore(QtCore.QObject):
 
     quitSignal = pyqtSignal()
-    showWord = pyqtSignal('QString')
+    showWord = pyqtSignal('QString', 'QString')
     __translator = Translator()
 
     def __init__(self):
@@ -172,10 +258,17 @@ class QGuiCore(QtCore.QObject):
                 QtGui.QSystemTrayIcon.Information, 5000)
 
     def askRandomWord(self):
+        if self.__translator.size() == 0:
+            return
+
         random.seed()
         rnum = random.randrange(self.__translator.size())
-        word = self.__translator.getkey(rnum)
-        self.showWord.emit(QtCore.QString.fromUtf8(word))
+        word = ''
+        while (word == ''):
+            word = self.__translator.getkey(rnum)
+
+        tr = self.__translator.getword(word)
+        self.showWord.emit(QString.fromUtf8(word), QString.fromUtf8(tr))
 
 
 if __name__ == '__main__':
