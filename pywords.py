@@ -292,10 +292,9 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
     showSignal = pyqtSignal()
 
     def __init__(self, parent):
-        path = os.path.expanduser('~') + g_confdir
-        icon_main = QtGui.QIcon(path + '/pywords.png')
-        icon_quit = QtGui.QIcon(path + '/quit.png')
-        icon_question = QtGui.QIcon(path + '/question.png')
+        icon_main = QtGui.QIcon(g_confdir + '/pywords.png')
+        icon_quit = QtGui.QIcon(g_confdir + '/quit.png')
+        icon_question = QtGui.QIcon(g_confdir + '/question.png')
 
         super(QStatusIcon, self).__init__(icon_main, parent)
         menu = QtGui.QMenu()
