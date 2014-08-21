@@ -13,19 +13,21 @@ from PyQt4 import QtCore
 from PyQt4 import QtNetwork
 from PyQt4.QtCore import Qt, QString, pyqtSignal
 
+g_homedir = os.path.expanduser('~') 
+g_confdir = g_homedir + '/.pywords/'
+g_lang = 'ru'
+
+if not os.path.exists(g_confdir):
+    os.makedirs(g_confdir)
 
 # Network related code
 class Translator:
     'Connect to a google translate or just lookup in local cahce'
 
     __words = {}
-    __path = os.path.expanduser('~') + '/.pywords/'
-    __filename = __path + 'db'
+    __filename = g_confdir + 'db'
 
     def __init__(self):
-        if not os.path.exists(self.__path):
-            os.makedirs(self.__path)
-
         try:
             inputfile = open(self.__filename, 'rb')
             self.__words = pickle.load(inputfile)
@@ -44,10 +46,14 @@ class Translator:
             if translation != '':
                 self.__words[word] = {'tr': translation, 'weight': 1}
                 self.__words[translation] = {'tr': word, 'weight': 1}
-                outfile = open(self.__filename, 'wb')
-                pickle.dump(self.__words, outfile)
+                self.__store()
 
         return translation
+
+    def __store(self):
+        outfile = open(self.__filename, 'wb')
+        pickle.dump(self.__words, outfile)
+
 
     def __getkey(self, num):
         keys = list(self.__words.keys())
@@ -57,7 +63,7 @@ class Translator:
         return len(self.__words)
 
     def __tr(self, word):
-        lang = 'ru'
+        lang = g_lang
         if not self.__is_ascii(word):
             lang = 'en'
 
@@ -98,6 +104,12 @@ class Translator:
     def __is_ascii(self, word):
         return all(ord(c) < 128 for c in word)
 
+    def delete(self, word):
+        tr = self.getword(word)
+        self.__words.pop(tr, None)
+        self.__words.pop(word, None)
+        self.__store()
+
 class QWordsServer(QtNetwork.QTcpServer):
     'Receivec connections from a local clients and reads word to translate'
 
@@ -137,6 +149,7 @@ class QWordsWidget(QtGui.QDialog):
 
     answer = pyqtSignal('QString', bool)
     showed = pyqtSignal(bool)
+    delete = pyqtSignal('QString')
 
     def __init__(self):
         super(QWordsWidget, self).__init__()
@@ -154,11 +167,18 @@ class QWordsWidget(QtGui.QDialog):
         self.label.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
 
         self.lbutton = QtGui.QPushButton(self)
-        self.label.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        self.lbutton.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
         self.lbutton.setFlat(True)
         self.lbutton.setText('>')
         self.lbutton.setMaximumWidth(30)
         self.lbutton.pressed.connect(self.onButtonPressed)
+
+        self.delbutton = QtGui.QPushButton(self)
+        self.delbutton.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        self.delbutton.setFlat(True)
+        self.delbutton.setText('x')
+        self.delbutton.setToolTip('Do not ask this word again')
+        self.delbutton.pressed.connect(self.onDeleteWord)
 
         self.translation = QtGui.QLabel(self)
         self.translation.setStyleSheet('font: 11pt "Ubuntu";')
@@ -172,11 +192,14 @@ class QWordsWidget(QtGui.QDialog):
 
         # create layout
         self.layout = QtGui.QGridLayout(self)
-        self.layout.setSpacing(9)
+        self.layout.setVerticalSpacing(6)
         # add widgets to layout
-        self.layout.addWidget(self.label, 0, 0)
-        self.layout.addWidget(self.edit, 1, 0)
+        self.layout.addWidget(self.label, 0, 0, 1, 2)
+        self.layout.addWidget(self.edit, 1, 0, 1, 2)
         self.layout.addWidget(self.lbutton, 2, 0)
+        self.layout.addWidget(self.delbutton, 2, 1)
+
+        self.setLayout(self.layout)
 
     def showWord(self, word, tr):
         if not self.isVisible():
@@ -191,7 +214,10 @@ class QWordsWidget(QtGui.QDialog):
 
     def closeEvent(self, event):
         'just hide dialog'
-        event.ignore()
+
+        if event != None: 
+            event.ignore()
+
         self.__hideTranslation()
         self.hide()
         self.showed.emit(False)
@@ -210,6 +236,15 @@ class QWordsWidget(QtGui.QDialog):
 
         self.edit.setFocus()
 
+    def onDeleteWord(self):
+        word = self.label.text()
+        self.delete.emit(word)
+        self.close()
+
+    def reject(self):
+        self.close()
+
+
     def eventFilter(self, receiver, event):
         'event filter to get enter press event'
         if (event.type() == QtCore.QEvent.KeyPress and (event.key() == Qt.Key_Return
@@ -222,7 +257,7 @@ class QWordsWidget(QtGui.QDialog):
     def __showTranslation(self):
         if not self.__translationVisible:
             self.setFixedHeight(self.height() + 30)
-            self.layout.addWidget(self.translation, 3, 0)
+            self.layout.addWidget(self.translation, 3, 0, 1, 2)
             self.translation.setVisible(True)
             self.lbutton.setText('v')
             self.__translationVisible = True
@@ -244,6 +279,7 @@ class QWordsWidget(QtGui.QDialog):
             css = self.edit.styleSheet()
             if correct:
                 css = css + 'background-color: rgb(148, 220, 135);'  # green
+                QtCore.QTimer.singleShot(1000, self.close)
             else:
                 css = css + 'background-color: rgb(237, 121, 121);'  # red
             self.edit.setStyleSheet(css)
@@ -256,14 +292,16 @@ class QStatusIcon(QtGui.QSystemTrayIcon):
     showSignal = pyqtSignal()
 
     def __init__(self, parent):
-        path = os.path.expanduser('~') + '/.pywords/pywords.png'
-        icon = QtGui.QIcon(path)
+        path = os.path.expanduser('~') + g_confdir
+        icon_main = QtGui.QIcon(path + '/pywords.png')
+        icon_quit = QtGui.QIcon(path + '/quit.png')
+        icon_question = QtGui.QIcon(path + '/question.png')
 
-        super(QStatusIcon, self).__init__(icon, parent)
+        super(QStatusIcon, self).__init__(icon_main, parent)
         menu = QtGui.QMenu()
-        self.showWidgetAction = menu.addAction('Random word')
+        self.showWidgetAction = menu.addAction(icon_question, 'Random word')
         self.showWidgetAction.triggered.connect(self.showSignal)
-        self.quitAction = menu.addAction('Quit')
+        self.quitAction = menu.addAction(icon_quit, 'Quit')
         self.quitAction.triggered.connect(self.quitSignal)
 
         menu.addAction(self.showWidgetAction)
@@ -279,7 +317,7 @@ class QGuiCore(QtCore.QObject):
 
     quitSignal = pyqtSignal()
     showWord = pyqtSignal('QString', 'QString')
-    __translator = Translator()
+    translator = Translator()
 
     def __init__(self):
         super(QGuiCore, self).__init__()
@@ -296,21 +334,24 @@ class QGuiCore(QtCore.QObject):
         self.__icon.show()
 
     def translate(self, word):
-        tr = self.__translator.getword(str(word.toUtf8()))
+        tr = self.translator.getword(str(word.toUtf8()))
         self.__icon.showMessage(word, QtCore.QString.fromUtf8(tr),
                 QtGui.QSystemTrayIcon.Information, 5000)
 
     def askRandomWord(self):
-        if self.__translator.size() == 0 or self.__isFullscreen():
+        if self.translator.size() == 0 or self.__isFullscreen():
             return
 
-        word = self.__translator.randomword()
+        word = self.translator.randomword()
 
-        tr = self.__translator.getword(word)
+        tr = self.translator.getword(word)
         self.showWord.emit(QString.fromUtf8(word), QString.fromUtf8(tr))
 
     def answer(self, word, correct):
-        self.__translator.answer(str(word.toUtf8()), correct)
+        self.translator.answer(str(word.toUtf8()), correct)
+
+    def deleteWord(self, word):
+        self.translator.delete(str(word.toUtf8()))
 
     def __isFullscreen(self):
         'detect if system working in fullscreen, so wee do not want to interupt it'
@@ -336,6 +377,7 @@ if __name__ == '__main__':
         gui.showWord.connect(widget.showWord)
         widget.answer.connect(gui.answer)
         #widget.showed.connect()
+        widget.delete.connect(gui.deleteWord)
 
         server = QWordsServer()
         server.dataReceived.connect(gui.translate)
