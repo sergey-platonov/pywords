@@ -18,7 +18,9 @@ Troubleshooting
 ===============
 
 If you icons in system tray doesn't show up, please run following commands:
+
 gconftool-2 --type boolean --set /desktop/gnome/interface/buttons_have_icons true
+
 gconftool-2 --type boolean --set /desktop/gnome/interface/menus_have_icons true
 
 Dependecies
